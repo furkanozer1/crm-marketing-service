@@ -66,6 +66,14 @@ The following table details how the API endpoints serve the architecture:
 cd crm-system/marketing_service
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python -m flask run --port 5003
+update the postgresql credentials in the config.py with your own credentials
+in the config.py:
+SQLALCHEMY_DATABASE_URI = os.getenv(
+        'DATABASE_URL', 
+        'postgresql://postgres:asd@localhost:5432/crm_marketing'
+    )
+update this line with your own credentials: postgresql://<your-username>:<your-password>@localhost:5432/crm_marketing
+then create the database with the following command: createdb -U postgres crm_marketing
+finally run the project with: python -m flask run --port 5003
 ```
 Open [http://localhost:5003](http://localhost:5003)

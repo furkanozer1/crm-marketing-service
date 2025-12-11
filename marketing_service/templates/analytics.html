@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics{% endblock %}
+{% block page_title %}Marketing Analytics{% endblock %}
+
+{% block content %}
+<div class="page-content">
+    <!-- Analytics KPIs -->
+    <div class="analytics-kpis">
+        <div class="kpi-card wide">
+            <div class="kpi-icon" style="background: linear-gradient(135deg, #22c55e, #4ade80);">💰</div>
+            <div class="kpi-content">
+                <span class="kpi-value" id="total-revenue">$0</span>
+                <span class="kpi-label">Total Revenue Attributed</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: linear-gradient(135deg, #ef4444, #f87171);">💸</div>
+            <div class="kpi-content">
+                <span class="kpi-value" id="total-cost">$0</span>
+                <span class="kpi-label">Total Cost</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: linear-gradient(135deg, #6366f1, #818cf8);">📈</div>
+            <div class="kpi-content">
+                <span class="kpi-value" id="overall-roi">0%</span>
+                <span class="kpi-label">Overall ROI</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="analytics-charts">
+        <div class="chart-card">
+            <h3>Conversion Funnel</h3>
+            <div class="chart-container funnel-container">
+                <canvas id="funnel-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h3>Campaign ROI Comparison</h3>
+            <div class="chart-container">
+                <canvas id="roi-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- ROI Table -->
+    <div class="table-card">
+        <div class="table-header">
+            <h3>Campaign ROI Breakdown</h3>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Campaign</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Revenue</th>
+                        <th>Cost</th>
+                        <th>Conversions</th>
+                        <th>ROI</th>
+                    </tr>
+                </thead>
+                <tbody id="roi-table">
+                    <tr>
+                        <td colspan="7" class="loading-cell">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Segment Performance -->
+    <div class="table-card">
+        <div class="table-header">
+            <h3>Segment Performance</h3>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Segment</th>
+                        <th>Customer Count</th>
+                        <th>Campaigns</th>
+                        <th>Total Conversions</th>
+                        <th>Total Revenue</th>
+                    </tr>
+                </thead>
+                <tbody id="segment-table">
+                    <tr>
+                        <td colspan="5" class="loading-cell">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadAnalyticsData();
+    });
+
+    async function loadAnalyticsData() {
+        try {
+            // Load overview
+            const overview = await fetch('/analytics/overview').then(r => r.json());
+            document.getElementById('total-revenue').textContent = '$' + (overview.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('total-cost').textContent = '$' + (overview.total_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            const roi = overview.overall_roi || 0;
+            const roiEl = document.getElementById('overall-roi');
+            roiEl.textContent = roi.toFixed(1) + '%';
+            roiEl.classList.add(roi >= 0 ? 'positive' : 'negative');
+
+            // Load funnel
+            const funnel = await fetch('/analytics/funnel').then(r => r.json());
+            renderFunnelChart(funnel.stages);
+
+            // Load ROI report
+            const roiData = await fetch('/analytics/roi').then(r => r.json());
+            renderROIChart(roiData.campaigns);
+            renderROITable(roiData.campaigns);
+
+            // Load segment performance
+            const segments = await fetch('/analytics/segments').then(r => r.json());
+            renderSegmentTable(segments.segments);
+
+        } catch (error) {
+            console.error('Error loading analytics:', error);
+        }
+    }
+
+    function renderFunnelChart(stages) {
+        const ctx = document.getElementById('funnel-chart').getContext('2d');
+
+        const gradientColors = [
+            'rgba(99, 102, 241, 0.9)',
+            'rgba(79, 70, 229, 0.85)',
+            'rgba(129, 140, 248, 0.8)',
+            'rgba(34, 211, 238, 0.75)',
+            'rgba(34, 197, 94, 0.7)',
+            'rgba(22, 163, 74, 0.65)'
+        ];
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: stages.map(s => `${s.name}\n(${s.percentage.toFixed(1)}%)`),
+                datasets: [{
+                    data: stages.map(s => s.count),
+                    backgroundColor: gradientColors,
+                    borderRadius: 8,
+                    barThickness: 40
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const stage = stages[ctx.dataIndex];
+                                return `${stage.count} (${stage.percentage.toFixed(1)}%)`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: '#a0a0b0' }
+                    },
+                    y: {
+                        grid: { display: false },
+                        ticks: { color: '#a0a0b0' }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderROIChart(campaigns) {
+        const ctx = document.getElementById('roi-chart').getContext('2d');
+
+        const labels = campaigns.map(c => c.campaign_name);
+        const roiValues = campaigns.map(c => c.roi);
+        const colors = roiValues.map(v => v >= 0 ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'ROI %',
+                    data: roiValues,
+                    backgroundColor: colors,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: {
+                            color: '#a0a0b0',
+                            callback: (v) => v + '%'
+                        }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#a0a0b0' }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderROITable(campaigns) {
+        const tbody = document.getElementById('roi-table');
+
+        if (campaigns.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">No campaign data available</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = campaigns.map(c => {
+            const roiClass = c.roi >= 0 ? 'positive' : 'negative';
+            return `
+            <tr>
+                <td><strong>${c.campaign_name}</strong></td>
+                <td><span class="type-badge ${c.campaign_type}">${c.campaign_type}</span></td>
+                <td><span class="status-badge ${c.status}">${c.status}</span></td>
+                <td class="positive">$${c.revenue.toFixed(2)}</td>
+                <td class="negative">$${c.cost.toFixed(2)}</td>
+                <td>${c.conversions}</td>
+                <td class="${roiClass}"><strong>${c.roi.toFixed(1)}%</strong></td>
+            </tr>
+        `;
+        }).join('');
+    }
+
+    function renderSegmentTable(segments) {
+        const tbody = document.getElementById('segment-table');
+
+        if (segments.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">No segment data available</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = segments.map(s => `
+        <tr>
+            <td><strong>${s.segment_name}</strong></td>
+            <td>${s.customer_count}</td>
+            <td>${s.total_campaigns}</td>
+            <td>${s.total_conversions}</td>
+            <td class="positive">$${s.total_revenue.toFixed(2)}</td>
+        </tr>
+    `).join('');
+    }
+</script>
+{% endblock %}

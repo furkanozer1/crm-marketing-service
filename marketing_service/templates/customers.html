@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block title %}Customers{% endblock %}
+{% block page_title %}Customer Management{% endblock %}
+
+{% block header_actions %}
+<button class="btn btn-primary" onclick="openAddCustomerModal()">+ Add Customer</button>
+{% endblock %}
+
+{% block content %}
+<div class="page-content">
+    <!-- Filters -->
+    <div class="filters-section">
+        <div class="search-box">
+            <input type="text" id="search-input" placeholder="Search customers..." onkeyup="debounceSearch()">
+        </div>
+        <div class="filter-group">
+            <select id="status-filter" onchange="loadCustomers()">
+                <option value="">All Status</option>
+                <option value="lead">Lead</option>
+                <option value="prospect">Prospect</option>
+                <option value="customer">Customer</option>
+                <option value="churned">Churned</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Customers Table -->
+    <div class="table-card">
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Email</th>
+                        <th>Status</th>
+                        <th>Total Spent</th>
+                        <th>Engagement</th>
+                        <th>Lead Source</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="customers-table">
+                    <tr>
+                        <td colspan="7" class="loading-cell">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pagination" id="pagination"></div>
+    </div>
+</div>
+
+<!-- Add Customer Modal -->
+<div id="add-customer-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Add New Customer</h3>
+            <button class="close-btn" onclick="closeModal('add-customer-modal')">&times;</button>
+        </div>
+        <form id="add-customer-form" onsubmit="handleAddCustomer(event)">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="customer-name">Name *</label>
+                    <input type="text" id="customer-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="customer-email">Email *</label>
+                    <input type="email" id="customer-email" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="customer-phone">Phone</label>
+                    <input type="tel" id="customer-phone">
+                </div>
+                <div class="form-group">
+                    <label for="customer-status">Status</label>
+                    <select id="customer-status">
+                        <option value="lead">Lead</option>
+                        <option value="prospect">Prospect</option>
+                        <option value="customer">Customer</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="customer-source">Lead Source</label>
+                    <select id="customer-source">
+                        <option value="">-- Select --</option>
+                        <option value="Website">Website</option>
+                        <option value="Social Media">Social Media</option>
+                        <option value="Referral">Referral</option>
+                        <option value="Email Campaign">Email Campaign</option>
+                        <option value="Google Ads">Google Ads</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary"
+                    onclick="closeModal('add-customer-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Customer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Customer Details Modal -->
+<div id="customer-details-modal" class="modal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3 id="details-customer-name">Customer Details</h3>
+            <button class="close-btn" onclick="closeModal('customer-details-modal')">&times;</button>
+        </div>
+        <div id="customer-details-content" class="customer-details">
+            Loading...
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentPage = 1;
+    let searchTimeout;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCustomers();
+    });
+
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            currentPage = 1;
+            loadCustomers();
+        }, 300);
+    }
+
+    async function loadCustomers() {
+        const search = document.getElementById('search-input').value;
+        const status = document.getElementById('status-filter').value;
+
+        const params = new URLSearchParams({
+            page: currentPage,
+            per_page: 10
+        });
+        if (search) params.append('search', search);
+        if (status) params.append('status', status);
+
+        try {
+            const response = await fetch(`/customers?${params}`);
+            const data = await response.json();
+
+            renderCustomersTable(data.customers);
+            renderPagination(data.pages, data.current_page);
+        } catch (error) {
+            console.error('Error loading customers:', error);
+        }
+    }
+
+    function renderCustomersTable(customers) {
+        const tbody = document.getElementById('customers-table');
+
+        if (customers.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">No customers found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = customers.map(c => `
+        <tr onclick="viewCustomerDetails(${c.id})" style="cursor:pointer">
+            <td><strong>${c.name}</strong></td>
+            <td>${c.email}</td>
+            <td><span class="status-badge ${c.status}">${c.status}</span></td>
+            <td>$${(c.total_spent || 0).toFixed(2)}</td>
+            <td>
+                <div class="engagement-bar">
+                    <div class="engagement-fill" style="width: ${c.engagement_score}%"></div>
+                    <span>${c.engagement_score}%</span>
+                </div>
+            </td>
+            <td>${c.lead_source || '-'}</td>
+            <td>
+                <button class="action-btn" onclick="event.stopPropagation(); viewCustomerDetails(${c.id})">👁️</button>
+            </td>
+        </tr>
+    `).join('');
+    }
+
+    function renderPagination(totalPages, current) {
+        const container = document.getElementById('pagination');
+        if (totalPages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<button class="page-btn ${i === current ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+        }
+        container.innerHTML = html;
+    }
+
+    function goToPage(page) {
+        currentPage = page;
+        loadCustomers();
+    }
+
+    function openAddCustomerModal() {
+        document.getElementById('add-customer-form').reset();
+        document.getElementById('add-customer-modal').classList.add('show');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('show');
+    }
+
+    async function handleAddCustomer(e) {
+        e.preventDefault();
+
+        const data = {
+            name: document.getElementById('customer-name').value,
+            email: document.getElementById('customer-email').value,
+            phone: document.getElementById('customer-phone').value || null,
+            status: document.getElementById('customer-status').value,
+            lead_source: document.getElementById('customer-source').value || null
+        };
+
+        try {
+            const response = await fetch('/customers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                closeModal('add-customer-modal');
+                loadCustomers();
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Failed to add customer');
+            }
+        } catch (error) {
+            alert('Error adding customer');
+        }
+    }
+
+    async function viewCustomerDetails(id) {
+        document.getElementById('customer-details-modal').classList.add('show');
+        document.getElementById('customer-details-content').innerHTML = 'Loading...';
+
+        try {
+            const response = await fetch(`/customers/${id}`);
+            const customer = await response.json();
+
+            document.getElementById('details-customer-name').textContent = customer.name;
+
+            const demographics = customer.demographics || {};
+            const behavioral = customer.behavioral_data || {};
+
+            document.getElementById('customer-details-content').innerHTML = `
+            <div class="details-grid">
+                <div class="details-section">
+                    <h4>Contact Information</h4>
+                    <p><strong>Email:</strong> ${customer.email}</p>
+                    <p><strong>Phone:</strong> ${customer.phone || 'N/A'}</p>
+                    <p><strong>Status:</strong> <span class="status-badge ${customer.status}">${customer.status}</span></p>
+                    <p><strong>Lead Source:</strong> ${customer.lead_source || 'N/A'}</p>
+                </div>
+                
+                <div class="details-section">
+                    <h4>Demographics</h4>
+                    <p><strong>Age:</strong> ${demographics.age || 'N/A'}</p>
+                    <p><strong>Gender:</strong> ${demographics.gender || 'N/A'}</p>
+                    <p><strong>Location:</strong> ${demographics.location || 'N/A'}</p>
+                    <p><strong>Income:</strong> ${demographics.income_bracket || 'N/A'}</p>
+                </div>
+                
+                <div class="details-section">
+                    <h4>Engagement</h4>
+                    <p><strong>Engagement Score:</strong> ${customer.engagement_score}%</p>
+                    <p><strong>Website Visits:</strong> ${behavioral.website_visits || 0}</p>
+                    <p><strong>Email Opens:</strong> ${behavioral.email_opens || 0}</p>
+                    <p><strong>Last Activity:</strong> ${behavioral.last_activity_days || 'N/A'} days ago</p>
+                </div>
+                
+                <div class="details-section">
+                    <h4>Financial</h4>
+                    <p><strong>Total Spent:</strong> $${(customer.total_spent || 0).toFixed(2)}</p>
+                    <p><strong>Lifetime Value:</strong> $${(customer.lifetime_value || 0).toFixed(2)}</p>
+                    <p><strong>Purchases:</strong> ${(customer.purchase_history || []).length}</p>
+                </div>
+            </div>
+        `;
+        } catch (error) {
+            document.getElementById('customer-details-content').innerHTML = 'Error loading details';
+        }
+    }
+</script>
+{% endblock %}

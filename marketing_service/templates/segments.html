@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Segments{% endblock %}
+{% block page_title %}Customer Segmentation{% endblock %}
+
+{% block header_actions %}
+<button class="btn btn-primary" onclick="openCreateSegmentModal()">+ Create Segment</button>
+{% endblock %}
+
+{% block content %}
+<div class="page-content">
+    <!-- Segments Grid -->
+    <div class="segments-grid" id="segments-grid">
+        <div class="loading-cell">Loading segments...</div>
+    </div>
+</div>
+
+<!-- Create Segment Modal -->
+<div id="create-segment-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Create Segment</h3>
+            <button class="close-btn" onclick="closeModal('create-segment-modal')">&times;</button>
+        </div>
+        <form id="create-segment-form" onsubmit="handleCreateSegment(event)">
+            <div class="form-group">
+                <label for="segment-name">Segment Name *</label>
+                <input type="text" id="segment-name" required placeholder="e.g., High Value Customers">
+            </div>
+
+            <div class="form-group">
+                <label for="segment-description">Description</label>
+                <textarea id="segment-description" rows="2" placeholder="Describe this segment..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="segment-type">Segment Type</label>
+                <select id="segment-type">
+                    <option value="manual">Manual</option>
+                    <option value="demographic">Demographic</option>
+                    <option value="behavioral">Behavioral</option>
+                    <option value="purchase">Purchase-based</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Segmentation Rules</label>
+                <div id="rules-container">
+                    <div class="rule-row" data-index="0">
+                        <select class="rule-field" onchange="updateOperators(this)">
+                            <option value="total_spent">Total Spent</option>
+                            <option value="engagement_score">Engagement Score</option>
+                            <option value="status">Status</option>
+                            <option value="demographics.age">Age</option>
+                            <option value="demographics.gender">Gender</option>
+                            <option value="demographics.location">Location</option>
+                            <option value="demographics.income_bracket">Income</option>
+                        </select>
+                        <select class="rule-operator">
+                            <option value="gt">Greater than</option>
+                            <option value="gte">Greater or equal</option>
+                            <option value="lt">Less than</option>
+                            <option value="lte">Less or equal</option>
+                            <option value="eq">Equals</option>
+                            <option value="contains">Contains</option>
+                        </select>
+                        <input type="text" class="rule-value" placeholder="Value">
+                        <button type="button" class="remove-rule-btn" onclick="removeRule(this)">×</button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="addRule()">+ Add Rule</button>
+            </div>
+
+            <div class="form-group">
+                <label>Match Type</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="match-type" value="all" checked> Match ALL rules</label>
+                    <label><input type="radio" name="match-type" value="any"> Match ANY rule</label>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary"
+                    onclick="closeModal('create-segment-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Segment</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Segment Details Modal -->
+<div id="segment-details-modal" class="modal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3 id="details-segment-name">Segment Details</h3>
+            <button class="close-btn" onclick="closeModal('segment-details-modal')">&times;</button>
+        </div>
+        <div id="segment-details-content">Loading...</div>
+    </div>
+</div>
+
+<script>
+    let ruleIndex = 1;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSegments();
+    });
+
+    async function loadSegments() {
+        try {
+            const response = await fetch('/segments');
+            const segments = await response.json();
+            renderSegments(segments);
+        } catch (error) {
+            console.error('Error loading segments:', error);
+        }
+    }
+
+    function renderSegments(segments) {
+        const container = document.getElementById('segments-grid');
+
+        if (segments.length === 0) {
+            container.innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">🎯</span>
+                <h3>No segments yet</h3>
+                <p>Create your first customer segment to start targeted marketing.</p>
+                <button class="btn btn-primary" onclick="openCreateSegmentModal()">Create Segment</button>
+            </div>
+        `;
+            return;
+        }
+
+        container.innerHTML = segments.map(s => `
+        <div class="segment-card" onclick="viewSegmentDetails(${s.id})">
+            <div class="segment-header">
+                <h3>${s.name}</h3>
+                <span class="segment-type-badge ${s.segment_type}">${s.segment_type}</span>
+            </div>
+            <p class="segment-description">${s.description || 'No description'}</p>
+            <div class="segment-stats">
+                <div class="segment-stat">
+                    <span class="stat-value">${s.customer_count}</span>
+                    <span class="stat-label">Customers</span>
+                </div>
+                <div class="segment-stat">
+                    <span class="stat-value">${(s.criteria?.rules || []).length}</span>
+                    <span class="stat-label">Rules</span>
+                </div>
+            </div>
+            <div class="segment-actions">
+                <button class="btn btn-sm" onclick="event.stopPropagation(); refreshSegment(${s.id})">🔄 Refresh</button>
+            </div>
+        </div>
+    `).join('');
+    }
+
+    function openCreateSegmentModal() {
+        document.getElementById('create-segment-form').reset();
+        document.getElementById('rules-container').innerHTML = `
+        <div class="rule-row" data-index="0">
+            <select class="rule-field" onchange="updateOperators(this)">
+                <option value="total_spent">Total Spent</option>
+                <option value="engagement_score">Engagement Score</option>
+                <option value="status">Status</option>
+                <option value="demographics.age">Age</option>
+                <option value="demographics.gender">Gender</option>
+                <option value="demographics.location">Location</option>
+                <option value="demographics.income_bracket">Income</option>
+            </select>
+            <select class="rule-operator">
+                <option value="gt">Greater than</option>
+                <option value="gte">Greater or equal</option>
+                <option value="lt">Less than</option>
+                <option value="lte">Less or equal</option>
+                <option value="eq">Equals</option>
+                <option value="contains">Contains</option>
+            </select>
+            <input type="text" class="rule-value" placeholder="Value">
+            <button type="button" class="remove-rule-btn" onclick="removeRule(this)">×</button>
+        </div>
+    `;
+        ruleIndex = 1;
+        document.getElementById('create-segment-modal').classList.add('show');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('show');
+    }
+
+    function addRule() {
+        const container = document.getElementById('rules-container');
+        const newRule = document.createElement('div');
+        newRule.className = 'rule-row';
+        newRule.dataset.index = ruleIndex++;
+        newRule.innerHTML = `
+        <select class="rule-field" onchange="updateOperators(this)">
+            <option value="total_spent">Total Spent</option>
+            <option value="engagement_score">Engagement Score</option>
+            <option value="status">Status</option>
+            <option value="demographics.age">Age</option>
+            <option value="demographics.gender">Gender</option>
+            <option value="demographics.location">Location</option>
+            <option value="demographics.income_bracket">Income</option>
+        </select>
+        <select class="rule-operator">
+            <option value="gt">Greater than</option>
+            <option value="gte">Greater or equal</option>
+            <option value="lt">Less than</option>
+            <option value="lte">Less or equal</option>
+            <option value="eq">Equals</option>
+            <option value="contains">Contains</option>
+        </select>
+        <input type="text" class="rule-value" placeholder="Value">
+        <button type="button" class="remove-rule-btn" onclick="removeRule(this)">×</button>
+    `;
+        container.appendChild(newRule);
+    }
+
+    function removeRule(btn) {
+        const container = document.getElementById('rules-container');
+        if (container.children.length > 1) {
+            btn.closest('.rule-row').remove();
+        }
+    }
+
+    function updateOperators(select) {
+        // Could customize operators based on field type
+    }
+
+    async function handleCreateSegment(e) {
+        e.preventDefault();
+
+        const rules = [];
+        document.querySelectorAll('.rule-row').forEach(row => {
+            const field = row.querySelector('.rule-field').value;
+            const operator = row.querySelector('.rule-operator').value;
+            const value = row.querySelector('.rule-value').value;
+
+            if (value) {
+                rules.push({ field, operator, value: isNaN(value) ? value : parseFloat(value) });
+            }
+        });
+
+        const matchType = document.querySelector('input[name="match-type"]:checked').value;
+
+        const data = {
+            name: document.getElementById('segment-name').value,
+            description: document.getElementById('segment-description').value,
+            segment_type: document.getElementById('segment-type').value,
+            criteria: { rules, match: matchType }
+        };
+
+        try {
+            const response = await fetch('/segments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                closeModal('create-segment-modal');
+                loadSegments();
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Failed to create segment');
+            }
+        } catch (error) {
+            alert('Error creating segment');
+        }
+    }
+
+    async function refreshSegment(id) {
+        try {
+            await fetch(`/segments/${id}/refresh`, { method: 'POST' });
+            loadSegments();
+        } catch (error) {
+            console.error('Error refreshing segment:', error);
+        }
+    }
+
+    async function viewSegmentDetails(id) {
+        document.getElementById('segment-details-modal').classList.add('show');
+        document.getElementById('segment-details-content').innerHTML = 'Loading...';
+
+        try {
+            const [segment, customersData] = await Promise.all([
+                fetch(`/segments/${id}`).then(r => r.json()),
+                fetch(`/segments/${id}/customers`).then(r => r.json())
+            ]);
+
+            document.getElementById('details-segment-name').textContent = segment.name;
+
+            const rules = segment.criteria?.rules || [];
+            const rulesHtml = rules.length > 0
+                ? rules.map(r => `<span class="rule-badge">${r.field} ${r.operator} ${r.value}</span>`).join(' ')
+                : 'No rules defined';
+
+            document.getElementById('segment-details-content').innerHTML = `
+            <div class="segment-info">
+                <p><strong>Type:</strong> <span class="segment-type-badge ${segment.segment_type}">${segment.segment_type}</span></p>
+                <p><strong>Description:</strong> ${segment.description || 'No description'}</p>
+                <p><strong>Match Type:</strong> ${segment.criteria?.match || 'all'}</p>
+                <p><strong>Rules:</strong> ${rulesHtml}</p>
+                <p><strong>Customer Count:</strong> ${segment.customer_count}</p>
+            </div>
+            
+            <h4>Matching Customers (${customersData.count})</h4>
+            <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Total Spent</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${customersData.customers.map(c => `
+                            <tr>
+                                <td>${c.name}</td>
+                                <td>${c.email}</td>
+                                <td><span class="status-badge ${c.status}">${c.status}</span></td>
+                                <td>$${(c.total_spent || 0).toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        } catch (error) {
+            document.getElementById('segment-details-content').innerHTML = 'Error loading segment details';
+        }
+    }
+</script>
+{% endblock %}

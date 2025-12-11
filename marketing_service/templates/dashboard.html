@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Marketing Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <!-- KPI Cards -->
+    <div class="kpi-section">
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: linear-gradient(135deg, #6366f1, #818cf8);">📧</div>
+            <div class="kpi-content">
+                <span class="kpi-value" id="total-campaigns">-</span>
+                <span class="kpi-label">Total Campaigns</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: linear-gradient(135deg, #22c55e, #4ade80);">👥</div>
+            <div class="kpi-content">
+                <span class="kpi-value" id="total-customers">-</span>
+                <span class="kpi-label">Total Customers</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: linear-gradient(135deg, #f59e0b, #fbbf24);">🎯</div>
+            <div class="kpi-content">
+                <span class="kpi-value" id="total-segments">-</span>
+                <span class="kpi-label">Active Segments</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: linear-gradient(135deg, #22d3ee, #67e8f9);">💰</div>
+            <div class="kpi-content">
+                <span class="kpi-value" id="total-revenue">-</span>
+                <span class="kpi-label">Revenue Attributed</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-section">
+        <div class="chart-card">
+            <h3>Conversion Funnel</h3>
+            <div class="chart-container">
+                <canvas id="funnel-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h3>Campaign Performance</h3>
+            <div class="chart-container">
+                <canvas id="performance-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Campaign Status & ROI -->
+    <div class="stats-section">
+        <div class="stats-card">
+            <h3>Campaign Status</h3>
+            <div class="status-grid" id="campaign-status">
+                <div class="status-item">
+                    <span class="status-count draft" id="draft-count">-</span>
+                    <span class="status-label">Draft</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-count active" id="active-count">-</span>
+                    <span class="status-label">Active</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-count completed" id="completed-count">-</span>
+                    <span class="status-label">Completed</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-card">
+            <h3>Overall Performance</h3>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <span class="metric-value" id="open-rate">-</span>
+                    <span class="metric-label">Open Rate</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value" id="click-rate">-</span>
+                    <span class="metric-label">Click Rate</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value" id="conversion-rate">-</span>
+                    <span class="metric-label">Conversion Rate</span>
+                </div>
+                <div class="metric-item highlight">
+                    <span class="metric-value" id="overall-roi">-</span>
+                    <span class="metric-label">Overall ROI</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Campaigns Table -->
+    <div class="table-card">
+        <div class="table-header">
+            <h3>Recent Campaigns</h3>
+            <a href="/campaigns-page" class="view-all-btn">View All →</a>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Campaign</th>
+                        <th>Type</th>
+                        <th>Segment</th>
+                        <th>Status</th>
+                        <th>Conversions</th>
+                        <th>Revenue</th>
+                    </tr>
+                </thead>
+                <tbody id="campaigns-table">
+                    <tr>
+                        <td colspan="6" class="loading-cell">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadDashboardData();
+    });
+
+    async function loadDashboardData() {
+        try {
+            // Load overview stats
+            const overview = await fetch('/analytics/overview').then(r => r.json());
+
+            document.getElementById('total-campaigns').textContent = overview.total_campaigns || 0;
+            document.getElementById('total-customers').textContent = overview.total_customers || 0;
+            document.getElementById('total-segments').textContent = overview.total_segments || 0;
+            document.getElementById('total-revenue').textContent = '$' + (overview.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            document.getElementById('draft-count').textContent = overview.draft_campaigns || 0;
+            document.getElementById('active-count').textContent = overview.active_campaigns || 0;
+            document.getElementById('completed-count').textContent = overview.completed_campaigns || 0;
+
+            document.getElementById('open-rate').textContent = (overview.overall_open_rate || 0).toFixed(1) + '%';
+            document.getElementById('click-rate').textContent = (overview.overall_click_rate || 0).toFixed(1) + '%';
+            document.getElementById('conversion-rate').textContent = (overview.overall_conversion_rate || 0).toFixed(1) + '%';
+            document.getElementById('overall-roi').textContent = (overview.overall_roi || 0).toFixed(1) + '%';
+
+            // Load funnel data
+            const funnel = await fetch('/analytics/funnel').then(r => r.json());
+            renderFunnelChart(funnel.stages);
+
+            // Load ROI data
+            const roi = await fetch('/analytics/roi').then(r => r.json());
+            renderPerformanceChart(roi.campaigns);
+
+            // Load campaigns
+            const campaigns = await fetch('/campaigns').then(r => r.json());
+            renderCampaignsTable(campaigns.slice(0, 5));
+
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+        }
+    }
+
+    function renderFunnelChart(stages) {
+        const ctx = document.getElementById('funnel-chart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: stages.map(s => s.name),
+                datasets: [{
+                    label: 'Count',
+                    data: stages.map(s => s.count),
+                    backgroundColor: [
+                        'rgba(99, 102, 241, 0.8)',
+                        'rgba(79, 70, 229, 0.8)',
+                        'rgba(129, 140, 248, 0.8)',
+                        'rgba(34, 211, 238, 0.8)',
+                        'rgba(34, 197, 94, 0.8)',
+                        'rgba(22, 163, 74, 0.8)'
+                    ],
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: '#a0a0b0' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#a0a0b0' }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderPerformanceChart(campaigns) {
+        const ctx = document.getElementById('performance-chart').getContext('2d');
+        const labels = campaigns.slice(0, 5).map(c => c.campaign_name);
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Revenue',
+                        data: campaigns.slice(0, 5).map(c => c.revenue),
+                        backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'Cost',
+                        data: campaigns.slice(0, 5).map(c => c.cost),
+                        backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#a0a0b0' }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: '#a0a0b0' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#a0a0b0' }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderCampaignsTable(campaigns) {
+        const tbody = document.getElementById('campaigns-table');
+
+        if (campaigns.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-cell">No campaigns yet</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = campaigns.map(c => `
+        <tr>
+            <td><strong>${c.name}</strong></td>
+            <td><span class="type-badge ${c.campaign_type}">${c.campaign_type}</span></td>
+            <td>${c.segment_name || '-'}</td>
+            <td><span class="status-badge ${c.status}">${c.status}</span></td>
+            <td>${c.results?.conversions || '-'}</td>
+            <td>${c.results?.revenue_attributed ? '$' + c.results.revenue_attributed.toFixed(2) : '-'}</td>
+        </tr>
+    `).join('');
+    }
+</script>
+{% endblock %}
